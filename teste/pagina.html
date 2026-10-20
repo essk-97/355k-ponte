@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Teste da ponte</title>
+<!-- Abre a ponte num iframe e a usa só por mensagens, como o 355k. O rodar.mjs abre esta página no Chrome. -->
+<iframe id="f" src="../emulador.html" style="width:512px;height:448px;border:0"></iframe>
+<pre id="saida">rodando…</pre>
+<script type="module">
+  const f = document.getElementById("f");
+  const pendentes = new Map();
+  const eventos = {};
+  let n = 0;
+  addEventListener("message", (e) => {
+    const m = e.data;
+    if (e.source !== f.contentWindow || !m || m.ponte !== 1) return;
+    if (m.id) {
+      const p = pendentes.get(m.id);
+      pendentes.delete(m.id);
+      m.ok ? p.res(m.valor) : p.rej(new Error(m.erro));
+    } else (eventos[m.evento] ||= []).push(m.dados || {});
+  });
+  const pedir = (cmd, dados) => new Promise((res, rej) => {
+    const id = ++n;
+    pendentes.set(id, { res, rej });
+    f.contentWindow.postMessage({ ponte: 1, id, cmd, dados }, location.origin);
+  });
+  async function esperar(nome, ms = 90_000) {
+    const t0 = Date.now();
+    while (!eventos[nome]?.length) {
+      if (eventos.erro?.length) throw new Error("o emulador deu erro: " + eventos.erro[0].texto);
+      if (Date.now() - t0 > ms) throw new Error(`o evento "${nome}" não chegou`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return eventos[nome].shift();
+  }
+  const checar = (ok, msg) => { if (!ok) throw new Error(msg); };
+  const passos = [];
+
+  try {
+    await esperar("pronta");
+    const rom = await (await fetch("/rom-teste.sfc")).blob();
+    await pedir("iniciar", {
+      nucleo: new URLSearchParams(location.search).get("nucleo") || "mesen_s", sistema: "snes", nomeDoJogo: "jogo.sfc",
+      rom, arquivos: null, cartucho: null, idDoJogo: "teste", soGraficos: true,
+      teclas: {
+        1: { up: "w", down: "s", left: "a", right: "d", y: "u", x: "i", b: "j", a: "k", l: "7", r: "8", select: "backspace", start: "enter" },
+        2: { up: "up arrow", down: "down arrow", left: "left arrow", right: "right arrow", y: "numpad 4", x: "numpad 5", b: "numpad 1", a: "numpad 2", l: "numpad 7", r: "numpad 8", select: "subtract", start: "add" },
+      },
+    });
+    const ini = await esperar("iniciou");
+    checar(ini.estados === true, "o núcleo diz que não salva estados");
+    await esperar("imagem");
+    passos.push("iniciou");
+
+    // A ROM de teste pinta a tela de vermelho.
+    const bmp = await createImageBitmap(await pedir("captura"));
+    const c = new OffscreenCanvas(1, 1).getContext("2d");
+    c.drawImage(bmp, bmp.width / 2, bmp.height / 2, 1, 1, 0, 0, 1, 1);
+    const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
+    checar(r > 200 && g < 50 && b < 50, `a tela devia estar vermelha e está ${r},${g},${b}`);
+    passos.push("imagem");
+
+    // A ROM grava 0x55 no começo da SRAM.
+    await pedir("salvarCartucho");
+    const cart = await esperar("cartucho");
+    checar(cart.dados && cart.dados[0] === 0x55, "o save do cartucho não veio com o que a ROM gravou");
+    passos.push("cartucho");
+
+    const { dados } = await pedir("obterEstado");
+    checar(dados && dados.length > 1000, "o estado veio vazio");
+    await pedir("carregarEstado", { dados });
+    passos.push("estado");
+
+    const mapa = await pedir("mapaDeTeclas");
+    const codigo = (nome) => Number(Object.keys(mapa).find((k) => mapa[k] === nome));
+    // Start vira Backspace, que era do Select: o Select fica com o Enter.
+    let t = await pedir("trocarTecla", { jogador: 1, botao: "start", codigo: codigo("backspace") });
+    checar(t.teclas.start === "backspace" && t.teclas.select === "enter", "a troca entre dois botões não trocou");
+    checar(t.trocou && t.trocou.jogador === 1 && t.trocou.botao === "select" && t.trocou.tecla === "enter", "a troca não avisou quem trocou");
+    // Tecla livre: ninguém troca.
+    t = await pedir("trocarTecla", { jogador: 1, botao: "l", codigo: codigo("q") });
+    checar(t.teclas.l === "q" && t.trocou === null, "tecla livre não devia trocar com ninguém");
+    // A tecla de outro jogador: o Y do jogador 2 fica com a antiga (Q).
+    t = await pedir("trocarTecla", { jogador: 1, botao: "l", codigo: codigo("numpad 4") });
+    checar(t.trocou && t.trocou.jogador === 2 && t.trocou.botao === "y" && t.trocou.tecla === "q", "a troca com o jogador 2 não aconteceu");
+    checar((await pedir("teclas", { jogador: 2 })).y === "q", "o jogador 2 não ficou com a tecla antiga");
+    await pedir("teclasPadrao");
+    const padrao = await pedir("teclas", { jogador: 1 });
+    checar(padrao.start === "enter" && padrao.l === "7", "o padrão não voltou");
+    passos.push("teclas");
+
+    window.__resultado = { ok: true, passos };
+  } catch (e) {
+    window.__resultado = { ok: false, passos, erro: e.message };
+  }
+  document.getElementById("saida").textContent = JSON.stringify(window.__resultado, null, 2);
+</script>
