@@ -42,6 +42,17 @@
     if (!iniciado) throw new Error("O jogo ainda não começou.");
   };
 
+  // Os poucos textos que a própria ponte mostra, no idioma do emulador (o "idioma" de iniciar: pt-BR, en-US, es-ES).
+  const TEXTOS = {
+    graficos: { pt: "Gráficos", en: "Graphics", es: "Gráficos" },
+    preparando: { pt: "Preparando o jogo ({i} de {n})", en: "Preparing the game ({i} of {n})", es: "Preparando el juego ({i} de {n})" },
+    disco: { pt: "Disco {n} colocado", en: "Disc {n} inserted", es: "Disco {n} insertado" },
+  };
+  const texto = (chave, vars = {}) => {
+    const idioma = String((cfg && cfg.idioma) || "pt").slice(0, 2);
+    return (TEXTOS[chave][idioma] || TEXTOS[chave].pt).replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ""));
+  };
+
   // ---------- controles ----------
   // Índices do RetroPad (os mesmos no Mesen-S, no mGBA, no melonDS e no PCSX). L2/R2/L3/R3 só no PS1.
   const RETROPAD = { b: 0, y: 1, select: 2, start: 3, up: 4, down: 5, left: 6, right: 7, a: 8, x: 9, l: 10, r: 11, l2: 12, r2: 13, l3: 14, r3: 15 };
@@ -161,7 +172,7 @@
     ejs.checkCompression = async (data, msg, fileCb) => {
       if (typeof fileCb !== "function") return original(data, msg, fileCb);
       for (const [i, f] of arquivos.entries()) {
-        ejs.textElem.innerText = `Preparando o jogo (${i + 1} de ${arquivos.length})`;
+        ejs.textElem.innerText = texto("preparando", { i: i + 1, n: arquivos.length });
         fileCb(f.nome, new Uint8Array(await f.dados.arrayBuffer()));
       }
       return {};
@@ -200,7 +211,7 @@
     let graficos = null;
     for (const item of home.children) {
       if (item.firstChild?.textContent === "Graphics Settings") {
-        item.firstChild.textContent = "Gráficos";
+        item.firstChild.textContent = texto("graficos");
         graficos = item;
       } else item.style.display = "none";
     }
@@ -276,6 +287,14 @@
       return false;
     }
   }
+
+  // ---------- atalhos ----------
+  // Teclas que quem abriu a ponte usa para si (salvar e carregar rápido, por exemplo): ao apertar uma delas com o
+  // jogo rodando, avisa pelo evento "atalho" ({ codigo }). Segurar a tecla não repete o aviso.
+  let atalhos = [];
+  addEventListener("keydown", (e) => {
+    if (iniciado && !e.repeat && atalhos.includes(e.keyCode)) evento("atalho", { codigo: e.keyCode });
+  }, true);
 
   // ---------- jogar online (quem abriu a sala) ----------
   // A tela e o som vão por WebRTC direto para o convidado, que vira o jogador 2 e manda só os botões.
@@ -425,7 +444,7 @@
     trocarDisco({ disco }) {
       precisaJogo();
       gm.setCurrentDisk(disco);
-      ejs.displayMessage(`Disco ${disco + 1} colocado`);
+      ejs.displayMessage(texto("disco", { n: disco + 1 }));
     },
 
     // Nomes de tecla que o emulador conhece: { códigoDaTecla: nome }.
@@ -463,6 +482,11 @@
       }
       completarPs1();
       ejs.saveSettings();
+    },
+
+    // As teclas de atalho, pelo código (keyCode); troca as anteriores. Ver "atalhos".
+    atalhos({ codigos }) {
+      atalhos = Array.isArray(codigos) ? codigos.filter(Number.isInteger) : [];
     },
 
     // Abre o menu de controles do próprio emulador (para trocar os botões do controle USB/Bluetooth).

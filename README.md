@@ -56,6 +56,7 @@ Antes de mandar qualquer coisa, espere o evento `pronta`.
 | `teclas` | `{ jogador }` (1 ou 2) | `{ botão: nomeDaTecla ou "" }` |
 | `trocarTecla` | `{ jogador, botao, codigo }` | `{ teclas, trocou }`. Se a tecla era de outro botão (de qualquer jogador), os dois trocam, e `trocou` diz quem ficou com a antiga: `{ jogador, botao, tecla }` |
 | `teclasPadrao` | — | — (volta às teclas que vieram em `iniciar`) |
+| `atalhos` | `{ codigos }`: códigos (keyCode) das teclas de atalho | — (ao apertar uma delas, vem o evento `atalho`) |
 | `menuDoControle` | — | — (abre o menu de controles do EmulatorJS) |
 | `conectarConvidado` | `{ servidoresIce, bitrate }` | oferta WebRTC `{ type, sdp }` |
 | `respostaDoConvidado` | `{ descricao }` | — |
@@ -98,6 +99,7 @@ Quem embute a página também pode definir `window.PONTE_OPCOES` antes de `ponte
 | `cartucho` | `{ dados: Uint8Array ou null }`: o jogo gravou o save do cartucho (também ao esconder a página) |
 | `mouse` | `{ preso }`: mouse preso na tela de toque do DS |
 | `online` | `{ estado }`: estado da conexão com o convidado (`connected`, `failed`…) |
+| `atalho` | `{ codigo }`: apertaram uma das teclas de `atalhos`, com o jogo rodando |
 
 ## Testar
 
